@@ -14,7 +14,7 @@ class ServerIntegrationTest {
 
     private Server server;
     private ServerSocket serverSocket;
-    private String address = "localhost";
+    private final String address = "localhost";
 
     @BeforeEach
     void setUp() throws IOException {
