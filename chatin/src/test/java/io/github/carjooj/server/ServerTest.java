@@ -1,59 +1,50 @@
 package io.github.carjooj.server;
 
+import io.github.carjooj.client.clienthandler.factory.ClientHandlerFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class ServerTest {
 
-    @Test
-    void shouldEchoReceivedMessage() throws IOException {
-        ServerSocket mockServerSocket = mock();
-        Socket mockSocket = mock();
-        String clientMessage = "hello server\n";
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(clientMessage.getBytes());
+    @Mock
+    private ServerSocket mockServerSocket;
 
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+    @Mock
+    private ExecutorService mockThreadPool;
 
-        when(mockServerSocket.accept()).thenReturn(mockSocket);
-        when(mockSocket.getInputStream()).thenReturn(inputStream);
-        when(mockSocket.getOutputStream()).thenReturn(outputStream);
+    @Mock
+    private ClientHandlerFactory mockFactory;
 
-        Server server = new Server(mockServerSocket);
+    @InjectMocks
+    private Server server;
 
-        server.handleClient(mockSocket);
-
-        assertEquals(clientMessage, outputStream.toString());
-
-    }
 
     @Test
-    void shoudCloseSocketWhenClientSendsQuitCommand() throws IOException {
-        ServerSocket mockServerSocket = mock();
+    void shouldAcceptConnectionAndSubmitToThreadPool() throws IOException {
         Socket mockSocket = mock();
+        Runnable mockHandler = mock();
 
-        String quitCommand = "\\quit\n";
-
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(quitCommand.getBytes());
-
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-
+        when(mockServerSocket.isClosed()).thenReturn(false, true);
         when(mockServerSocket.accept()).thenReturn(mockSocket);
-        when(mockSocket.getInputStream()).thenReturn(inputStream);
-        when(mockSocket.getOutputStream()).thenReturn(outputStream);
+        when(mockFactory.create(mockSocket)).thenReturn(mockHandler);
 
-        Server server = new Server(mockServerSocket);
+        server.awaitConnection();
 
-        server.handleClient(mockSocket);
 
-        verify(mockSocket).close();
+        verify(mockFactory).create(mockSocket);
+
+        verify(mockThreadPool).submit(mockHandler);
     }
-    
+
 }
