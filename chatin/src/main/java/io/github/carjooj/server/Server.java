@@ -1,51 +1,35 @@
 package io.github.carjooj.server;
 
-import java.io.BufferedReader;
+import io.github.carjooj.client.clienthandler.factory.ClientHandlerFactory;
+
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class Server {
     private final ServerSocket serverSocket;
 
-    private final ExecutorService vThreadPool = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService threadPool;
 
-    public Server(ServerSocket serverSocket) {
+    private final ClientHandlerFactory clientHandlerFactory;
+
+    public Server(ServerSocket serverSocket, ExecutorService threadPool, ClientHandlerFactory clientHandlerFactory) {
         this.serverSocket = serverSocket;
+        this.threadPool = threadPool;
+        this.clientHandlerFactory = clientHandlerFactory;
     }
 
-    public void awaitConnection() throws IOException {
-        while (true) {
-            Socket client = serverSocket.accept();
-
-            vThreadPool.submit(() -> {
-               try {
-                   handleClient(client);
-               } catch (IOException e) {
-                   e.printStackTrace();
-               }
-            });
-        }
-    }
-
-    public void handleClient(Socket client) throws IOException {
-        PrintWriter out = new PrintWriter(client.getOutputStream(), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-
-
-        String messageFromClient;
-        while ((messageFromClient = in.readLine()) != null) {
-            if ("\\quit".equals(messageFromClient)) {
-                break;
+    public void awaitConnection() {
+        while (!serverSocket.isClosed()) {
+            try {
+                Socket client = serverSocket.accept();
+                Runnable clientHandler = clientHandlerFactory.create(client);
+                threadPool.submit(clientHandler);
+            } catch (IOException e) {
+                System.err.println("Erro no accept: " + e.getMessage());
             }
-            out.println(messageFromClient);
         }
-
-        client.close();
     }
 
 }
