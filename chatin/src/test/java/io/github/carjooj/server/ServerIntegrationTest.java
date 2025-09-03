@@ -3,6 +3,8 @@ package io.github.carjooj.server;
 import io.github.carjooj.client.clienthandler.factory.ChatClientHandlerFactory;
 import io.github.carjooj.client.clienthandler.factory.ClientHandlerFactory;
 import io.github.carjooj.client.clientregistry.ClientRegistry;
+import io.github.carjooj.logger.AppLogger;
+import io.github.carjooj.logger.Slf4jAppLogger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,9 +31,11 @@ class ServerIntegrationTest {
     void setUp() throws IOException {
         serverSocket = new ServerSocket(0);
         ClientRegistry clientRegistry = new ClientRegistry();
-        ClientHandlerFactory clientHandlerFactory = new ChatClientHandlerFactory(clientRegistry);
+        AppLogger registryLogger = Slf4jAppLogger.getLogger(ClientRegistry.class);
+        ClientHandlerFactory clientHandlerFactory = new ChatClientHandlerFactory(clientRegistry, registryLogger);
         ExecutorService threadPool = Executors.newVirtualThreadPerTaskExecutor();
-        server = new Server(serverSocket, threadPool, clientHandlerFactory);
+        AppLogger serverLogger = Slf4jAppLogger.getLogger(Server.class);
+        server = new Server(serverSocket, threadPool, clientHandlerFactory, serverLogger);
 
         serverExecutor = Executors.newSingleThreadExecutor();
         serverExecutor.submit(() -> server.awaitConnection());
