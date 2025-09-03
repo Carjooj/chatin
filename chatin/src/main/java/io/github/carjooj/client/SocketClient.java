@@ -1,5 +1,7 @@
 package io.github.carjooj.client;
 
+import io.github.carjooj.exceptions.ClientConnectionException;
+
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -13,8 +15,12 @@ public class SocketClient implements Client {
     private String username;
 
 
-    public SocketClient(Socket socket) throws IOException {
-        this.writer = new PrintWriter(new BufferedOutputStream(socket.getOutputStream()), true);
+    public SocketClient(Socket socket) throws ClientConnectionException {
+        try {
+            this.writer = new PrintWriter(new BufferedOutputStream(socket.getOutputStream()), true);
+        } catch (IOException e) {
+            throw new ClientConnectionException("Erro ao criar Stream de comunicação: ", e);
+        }
     }
 
     @Override
