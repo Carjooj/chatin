@@ -1,6 +1,8 @@
 package io.github.carjooj.server;
 
 import io.github.carjooj.client.clienthandler.factory.ClientHandlerFactory;
+import io.github.carjooj.exceptions.HandlerCreationException;
+import io.github.carjooj.logger.AppLogger;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -14,10 +16,13 @@ public class Server {
 
     private final ClientHandlerFactory clientHandlerFactory;
 
-    public Server(ServerSocket serverSocket, ExecutorService threadPool, ClientHandlerFactory clientHandlerFactory) {
+    private final AppLogger logger;
+
+    public Server(ServerSocket serverSocket, ExecutorService threadPool, ClientHandlerFactory clientHandlerFactory, AppLogger logger) {
         this.serverSocket = serverSocket;
         this.threadPool = threadPool;
         this.clientHandlerFactory = clientHandlerFactory;
+        this.logger = logger;
     }
 
     public void awaitConnection() {
@@ -26,8 +31,8 @@ public class Server {
                 Socket client = serverSocket.accept();
                 Runnable clientHandler = clientHandlerFactory.create(client);
                 threadPool.submit(clientHandler);
-            } catch (IOException e) {
-                System.err.println("Erro no accept: " + e.getMessage());
+            } catch (HandlerCreationException | IOException e) {
+                logger.error("Erro ao aceitar conexão: ", e);
             }
         }
     }
