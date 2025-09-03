@@ -1,9 +1,11 @@
 package io.github.carjooj.server;
 
 import io.github.carjooj.client.clienthandler.factory.ClientHandlerFactory;
+import io.github.carjooj.exceptions.HandlerCreationException;
+import io.github.carjooj.logger.AppLogger;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -26,12 +28,18 @@ class ServerTest {
     @Mock
     private ClientHandlerFactory mockFactory;
 
-    @InjectMocks
+    @Mock
+    private AppLogger mockLogger;
+
     private Server server;
 
+    @BeforeEach
+    void setUp() {
+        server = new Server(mockServerSocket, mockThreadPool, mockFactory, mockLogger);
+    }
 
     @Test
-    void shouldAcceptConnectionAndSubmitToThreadPool() throws IOException {
+    void shouldAcceptConnectionAndSubmitToThreadPool() throws IOException, HandlerCreationException {
         Socket mockSocket = mock();
         Runnable mockHandler = mock();
 
@@ -45,6 +53,19 @@ class ServerTest {
         verify(mockFactory).create(mockSocket);
 
         verify(mockThreadPool).submit(mockHandler);
+    }
+
+    @Test
+    void shouldLogErrorWhenAcceptFails() throws IOException {
+        String exceptionMessage = "Test exception";
+        IOException ioException = new IOException(exceptionMessage);
+
+        when(mockServerSocket.accept()).thenThrow(ioException);
+        when(mockServerSocket.isClosed()).thenReturn(false, true);
+
+        server.awaitConnection();
+
+        verify(mockLogger).error("Erro ao aceitar conexão: ", ioException);
     }
 
 }
