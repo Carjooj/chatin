@@ -2,6 +2,8 @@ package io.github.carjooj.client.clienthandler;
 
 import io.github.carjooj.client.Client;
 import io.github.carjooj.client.clientregistry.ClientRegistry;
+import io.github.carjooj.logger.AppLogger;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -10,10 +12,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.Socket;
 
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ClientHandlerTest {
@@ -28,7 +30,14 @@ class ClientHandlerTest {
     private ClientRegistry mockRegistry;
 
     @Mock
+    private AppLogger mockLogger;
+
     private ClientHandler clientHandler;
+
+    @BeforeEach
+    void setUp() {
+        clientHandler = new ClientHandler(mockClient, mockSocket, mockRegistry, mockLogger);
+    }
 
 
     @Test
@@ -39,8 +48,6 @@ class ClientHandlerTest {
 
 
         when(mockSocket.getInputStream()).thenReturn(inputStream);
-
-        clientHandler = new ClientHandler(mockClient, mockSocket, mockRegistry);
 
         clientHandler.run();
 
@@ -64,8 +71,6 @@ class ClientHandlerTest {
 
         when(mockSocket.getInputStream()).thenReturn(inputStream);
 
-        clientHandler = new ClientHandler(mockClient, mockSocket, mockRegistry);
-
         clientHandler.run();
 
         ArgumentCaptor<Client> clientCaptor = ArgumentCaptor.forClass(Client.class);
@@ -85,10 +90,55 @@ class ClientHandlerTest {
 
         when(mockSocket.getInputStream()).thenReturn(inputStream);
 
-        clientHandler = new ClientHandler(mockClient, mockSocket, mockRegistry);
-
         clientHandler.run();
 
         verify(mockClient).setUsername(username);
+    }
+
+    @Test
+    void shouldLogExceptionAndNotInteractWithRegistryWhenStreamCreationFails() throws IOException {
+        String exceptionMessage = "Stream failed";
+        IOException ioException = new IOException(exceptionMessage);
+
+        when(mockSocket.getInputStream()).thenThrow(ioException);
+
+        clientHandler.run();
+
+        verify(mockLogger).error("Erro na comunicação com o cliente: ", ioException);
+
+        verify(mockRegistry, never()).add(any());
+        verify(mockRegistry, never()).remove(any());
+    }
+
+    @Test
+    void shouldLogErrorAndRemoveClientFromRegistryIfCommunicationFails() throws IOException {
+        String exceptionMessage = "Communication failed test";
+        IOException ioException = new IOException(exceptionMessage);
+
+        InputStream faultyInputStream = new InputStream() {
+            private final ByteArrayInputStream delegate = new ByteArrayInputStream("TestUser\n".getBytes());
+            private boolean isUsernameRead = false;
+
+            @Override
+            public int read() throws IOException {
+                if (!isUsernameRead) {
+                    int data = delegate.read();
+                    if (data == '\n') {
+                        isUsernameRead = true;
+                    }
+                    return data;
+                }
+                throw ioException;
+            }
+        };
+
+        when(mockSocket.getInputStream()).thenReturn(faultyInputStream);
+
+        clientHandler.run();
+
+        verify(mockLogger).error(anyString(), eq(ioException));
+
+        verify(mockRegistry).add(mockClient);
+        verify(mockRegistry).remove(mockClient);
     }
 }
