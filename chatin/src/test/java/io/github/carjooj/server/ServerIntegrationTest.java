@@ -17,8 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 class ServerIntegrationTest {
 
@@ -26,9 +25,12 @@ class ServerIntegrationTest {
     private ServerSocket serverSocket;
     private ExecutorService serverExecutor;
     private final String address = "localhost";
+    private final int soTimeout = 5000;
+    private final String testSyncMessage = "SYNC";
+
 
     @BeforeEach
-    void setUp() throws IOException {
+    void setUp() throws IOException, InterruptedException {
         serverSocket = new ServerSocket(0);
         ClientRegistry clientRegistry = new ClientRegistry();
         AppLogger registryLogger = Slf4jAppLogger.getLogger(ClientRegistry.class);
@@ -37,9 +39,15 @@ class ServerIntegrationTest {
         AppLogger serverLogger = Slf4jAppLogger.getLogger(Server.class);
         server = new Server(serverSocket, threadPool, clientHandlerFactory, serverLogger);
 
-        serverExecutor = Executors.newSingleThreadExecutor();
-        serverExecutor.submit(() -> server.awaitConnection());
+        CountDownLatch serverReadyLatch = new CountDownLatch(1);
 
+        serverExecutor = Executors.newSingleThreadExecutor();
+        serverExecutor.submit(() -> {
+            serverReadyLatch.countDown();
+            server.awaitConnection();
+        });
+
+        assertTrue(serverReadyLatch.await(6, TimeUnit.SECONDS), "Servidor não iniciou a tempo");
     }
 
     @AfterEach
@@ -75,18 +83,25 @@ class ServerIntegrationTest {
     @Test
     void shouldHandleMultipleClientsConcurrently() throws IOException {
         int port = serverSocket.getLocalPort();
-        final CountDownLatch messageReceivedLatch = new CountDownLatch(1);
         Socket client1 = new Socket(address, port);
+        client1.setSoTimeout(soTimeout);
         PrintWriter out1 = new PrintWriter(new BufferedOutputStream(client1.getOutputStream()), true);
         BufferedReader in1 = new BufferedReader(new InputStreamReader(client1.getInputStream()));
         String username1 = "client1";
         out1.println(username1);
 
+
         Socket client2 = new Socket(address, port);
+        client2.setSoTimeout(soTimeout);
         PrintWriter out2 = new PrintWriter(new BufferedOutputStream(client2.getOutputStream()), true);
-        BufferedReader in2 = new LatchingBufferedReader(new InputStreamReader(client2.getInputStream()), messageReceivedLatch);
+        BufferedReader in2 = new BufferedReader(new InputStreamReader(client2.getInputStream()));
         String username2 = "client2";
         out2.println(username2);
+
+        out2.println(testSyncMessage);
+
+        String expectedSyncMessage = String.format("[%s]: %s", username2, testSyncMessage);
+        assertEquals(expectedSyncMessage, in1.readLine());
 
         String message1 = "hello";
         out1.println(message1);
@@ -103,20 +118,25 @@ class ServerIntegrationTest {
     @Test
     void shouldBroadcastMessageToOtherClients() throws IOException {
         int port = serverSocket.getLocalPort();
-        CountDownLatch countDownLatch = new CountDownLatch(1);
         Socket client1 = new Socket(address, port);
         PrintWriter out1 = new PrintWriter(new BufferedOutputStream(client1.getOutputStream()), true);
+        BufferedReader in1 = new BufferedReader(new InputStreamReader(client1.getInputStream()));
         String username1 = "client1";
         out1.println(username1);
 
         Socket client2 = new Socket(address, port);
+        client2.setSoTimeout(soTimeout);
         PrintWriter out2 = new PrintWriter(new BufferedOutputStream(client2.getOutputStream()), true);
-        BufferedReader in2 = new LatchingBufferedReader(new InputStreamReader(client2.getInputStream()), countDownLatch);
+        BufferedReader in2 = new BufferedReader(new InputStreamReader(client2.getInputStream()));
         out2.println("client2");
+
+        out2.println(testSyncMessage);
+
+        String expectedSync = String.format("[%s]: %s", "client2", testSyncMessage);
+        assertEquals(expectedSync, in1.readLine());
 
         String messageToClient = "hello everyone!";
         out1.println(messageToClient);
-
         String expectedMessage = String.format("[%s]: %s", username1, messageToClient);
         assertEquals(expectedMessage, in2.readLine());
 
@@ -127,16 +147,24 @@ class ServerIntegrationTest {
     @Test
     void shouldPrefixMessagesWithUsername() throws IOException {
         int port = serverSocket.getLocalPort();
-        final CountDownLatch messageReceivedLatch = new CountDownLatch(1);
         Socket client1 = new Socket(address, port);
+        client1.setSoTimeout(soTimeout);
         PrintWriter out1 = new PrintWriter(new BufferedOutputStream(client1.getOutputStream()), true);
+        BufferedReader in1 = new BufferedReader(new InputStreamReader(client1.getInputStream()));
+        out1.println("Carlos");
 
         Socket client2 = new Socket(address, port);
+        client2.setSoTimeout(soTimeout);
         PrintWriter out2 = new PrintWriter(new BufferedOutputStream(client2.getOutputStream()), true);
-        BufferedReader in2 = new LatchingBufferedReader(new InputStreamReader(client2.getInputStream()), messageReceivedLatch);
+        BufferedReader in2 = new BufferedReader(new InputStreamReader(client2.getInputStream()));
 
-        out1.println("Carlos");
         out2.println("Ana");
+
+
+        out2.println(testSyncMessage);
+
+        String expectedSync = String.format("[%s]: %s", "Ana", testSyncMessage);
+        assertEquals(expectedSync, in1.readLine());
 
         String messageSent = "Olá, Ana";
         out1.println(messageSent);
