@@ -31,12 +31,14 @@ class ClientHandlerTest {
     @Mock
     private AppLogger mockLogger;
 
+    @Mock
+    private MessageReader mockReader;
+
     private final String testUser = "testUser";
 
     private ClientHandler clientHandler;
     private final String quitCommand = "\\quit";
-    @Mock
-    private MessageReader mockReader;
+
 
     @BeforeEach
     void setUp() {
