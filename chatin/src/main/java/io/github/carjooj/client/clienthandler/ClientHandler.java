@@ -42,10 +42,7 @@ public class ClientHandler implements Runnable {
             try {
                 String messageFromClient;
                 while ((messageFromClient = messageReader.readMessage()) != null) {
-                    if ("\\quit".equals(messageFromClient)) {
-                        break;
-                    }
-                    clientRegistry.broadcast(client, messageFromClient);
+                    if (handleMessage(messageFromClient)) break;
                 }
             } finally {
                 clientRegistry.remove(client);
@@ -53,5 +50,13 @@ public class ClientHandler implements Runnable {
         } catch (IOException e) {
             logger.error("Erro na comunicação com o cliente: ", e);
         }
+    }
+
+    private boolean handleMessage(String messageFromClient) {
+        if ("\\quit".equals(messageFromClient)) {
+            return true;
+        }
+        clientRegistry.broadcast(client, messageFromClient);
+        return false;
     }
 }
