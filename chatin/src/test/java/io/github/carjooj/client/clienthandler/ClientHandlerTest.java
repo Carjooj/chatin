@@ -2,6 +2,7 @@ package io.github.carjooj.client.clienthandler;
 
 import io.github.carjooj.client.Client;
 import io.github.carjooj.client.clientregistry.ClientRegistry;
+import io.github.carjooj.client.reader.MessageReader;
 import io.github.carjooj.logger.AppLogger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,9 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.Socket;
 
 import static org.mockito.Mockito.*;
@@ -32,22 +31,25 @@ class ClientHandlerTest {
     @Mock
     private AppLogger mockLogger;
 
+    @Mock
+    private MessageReader mockReader;
+
+    private final String testUser = "testUser";
+
     private ClientHandler clientHandler;
+    private final String quitCommand = "\\quit";
+
 
     @BeforeEach
     void setUp() {
-        clientHandler = new ClientHandler(mockClient, mockSocket, mockRegistry, mockLogger);
+        clientHandler = new ClientHandler(mockClient, mockSocket, mockRegistry, mockReader, mockLogger);
     }
 
 
     @Test
-    void shouldHandleClientLifecycleCorrectly() throws IOException {
-        String quitCommand = "\\quit\n";
+    void shouldAddAndRemoveClientDuringLifecycle() throws IOException {
 
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(quitCommand.getBytes());
-
-
-        when(mockSocket.getInputStream()).thenReturn(inputStream);
+        when(mockReader.readMessage()).thenReturn(testUser).thenReturn(quitCommand);
 
         clientHandler.run();
 
@@ -61,15 +63,10 @@ class ClientHandlerTest {
     }
 
     @Test
-    void shouldBroadcastMessagesToRegistry() throws IOException {
-        String username = "Test";
+    void shouldBroadcastMessagesAfterLogin() throws IOException {
         String message = "hello server";
-        String clientInput = username + "\n" + message + "\n" + "\\quit\n";
 
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(clientInput.getBytes());
-
-
-        when(mockSocket.getInputStream()).thenReturn(inputStream);
+        when(mockReader.readMessage()).thenReturn(testUser).thenReturn(message).thenReturn(quitCommand);
 
         clientHandler.run();
 
@@ -81,26 +78,21 @@ class ClientHandlerTest {
     }
 
     @Test
-    void shouldReadFirstLineAsUsername() throws IOException {
-        String username = "Carlos";
+    void shouldSetUsernameAndRegisterClient() throws IOException {
 
-        String clientMessage = username + "\n\\quit\n";
-
-        ByteArrayInputStream inputStream = new ByteArrayInputStream(clientMessage.getBytes());
-
-        when(mockSocket.getInputStream()).thenReturn(inputStream);
+        when(mockReader.readMessage()).thenReturn(testUser).thenReturn(quitCommand);
 
         clientHandler.run();
 
-        verify(mockClient).setUsername(username);
+        verify(mockClient).setUsername(testUser);
     }
 
     @Test
-    void shouldLogExceptionAndNotInteractWithRegistryWhenStreamCreationFails() throws IOException {
+    void shouldLogErrorWhenStreamFailOnCreation() throws IOException {
         String exceptionMessage = "Stream failed";
         IOException ioException = new IOException(exceptionMessage);
 
-        when(mockSocket.getInputStream()).thenThrow(ioException);
+        when(mockReader.readMessage()).thenThrow(ioException);
 
         clientHandler.run();
 
@@ -111,28 +103,12 @@ class ClientHandlerTest {
     }
 
     @Test
-    void shouldLogErrorAndRemoveClientFromRegistryIfCommunicationFails() throws IOException {
+    void shouldLogErrorAndRemoveClientWhenReadFailsAfterLogin() throws IOException {
         String exceptionMessage = "Communication failed test";
         IOException ioException = new IOException(exceptionMessage);
 
-        InputStream faultyInputStream = new InputStream() {
-            private final ByteArrayInputStream delegate = new ByteArrayInputStream("TestUser\n".getBytes());
-            private boolean isUsernameRead = false;
+        when(mockReader.readMessage()).thenReturn("TestUser").thenThrow(ioException);
 
-            @Override
-            public int read() throws IOException {
-                if (!isUsernameRead) {
-                    int data = delegate.read();
-                    if (data == '\n') {
-                        isUsernameRead = true;
-                    }
-                    return data;
-                }
-                throw ioException;
-            }
-        };
-
-        when(mockSocket.getInputStream()).thenReturn(faultyInputStream);
 
         clientHandler.run();
 

@@ -1,5 +1,6 @@
 package io.github.carjooj.client;
 
+import io.github.carjooj.client.protocol.ChatProtocol;
 import io.github.carjooj.exceptions.ClientConnectionException;
 
 import java.io.BufferedOutputStream;
@@ -31,6 +32,7 @@ public class SocketClient implements Client {
     @Override
     public void sendMessage(String message) {
         writer.println(message);
+        writer.println(ChatProtocol.MESSAGE_DELIMITER);
     }
 
     @Override
