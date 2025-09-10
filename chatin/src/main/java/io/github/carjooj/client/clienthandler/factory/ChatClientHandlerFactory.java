@@ -5,7 +5,7 @@ import io.github.carjooj.client.SocketClient;
 import io.github.carjooj.client.clienthandler.ClientHandler;
 import io.github.carjooj.client.clientregistry.ClientRegistry;
 import io.github.carjooj.client.reader.MessageReader;
-import io.github.carjooj.client.reader.SocketLineReader;
+import io.github.carjooj.client.reader.SocketMultiLineReader;
 import io.github.carjooj.exceptions.ClientConnectionException;
 import io.github.carjooj.exceptions.HandlerCreationException;
 import io.github.carjooj.logger.AppLogger;
@@ -29,7 +29,7 @@ public class ChatClientHandlerFactory implements ClientHandlerFactory {
         try {
             Client client = new SocketClient(clientSocket);
 
-            MessageReader messageReader = new SocketLineReader(clientSocket);
+            MessageReader messageReader = new SocketMultiLineReader(clientSocket);
 
             return new ClientHandler(client, clientSocket, clientRegistry, messageReader, logger);
         } catch (ClientConnectionException | IOException e) {
