@@ -3,13 +3,17 @@ package io.github.carjooj.server;
 import io.github.carjooj.client.clienthandler.factory.ChatClientHandlerFactory;
 import io.github.carjooj.client.clienthandler.factory.ClientHandlerFactory;
 import io.github.carjooj.client.clientregistry.ClientRegistry;
+import io.github.carjooj.client.reader.SocketMultiLineReader;
 import io.github.carjooj.logger.AppLogger;
 import io.github.carjooj.logger.Slf4jAppLogger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.Reader;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.CountDownLatch;
@@ -24,9 +28,8 @@ class ServerIntegrationTest {
     private Server server;
     private ServerSocket serverSocket;
     private ExecutorService serverExecutor;
-    private final String address = "localhost";
-    private final int soTimeout = 5000;
     private final String testSyncMessage = "SYNC";
+    private final String messageFormat = "[%s]: %s";
 
 
     @BeforeEach
@@ -65,115 +68,146 @@ class ServerIntegrationTest {
     @Test
     void shouldHandleMultipleMessagesAndQuit() throws IOException {
         int port = serverSocket.getLocalPort();
-        Socket client = new Socket(address, port);
-        PrintWriter out = new PrintWriter(new BufferedOutputStream(client.getOutputStream()), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-        out.println("User");
+        String username = "testUser";
+        try (
+                ClientConnection user = connectAndLogin(username, port)
+        ) {
 
-        out.println("User test message");
+            sendMessage(user.out(), "User test message");
 
-        out.println("\\quit");
+            sendMessage(user.out(), "\\quit");
 
-        assertNull(in.readLine());
+            assertNull(user.in().readMessage());
 
+        }
 
-        client.close();
     }
 
     @Test
     void shouldHandleMultipleClientsConcurrently() throws IOException {
         int port = serverSocket.getLocalPort();
-        Socket client1 = new Socket(address, port);
-        client1.setSoTimeout(soTimeout);
-        PrintWriter out1 = new PrintWriter(new BufferedOutputStream(client1.getOutputStream()), true);
-        BufferedReader in1 = new BufferedReader(new InputStreamReader(client1.getInputStream()));
-        String username1 = "client1";
-        out1.println(username1);
+        String username1 = "testClient";
+        String username2 = "anotherTestClient";
 
+        try (
+                ClientConnection testClient = connectAndLogin(username1, port);
+                ClientConnection anotherTestClient = connectAndLogin(username2, port)
+        ) {
+            sendMessage(anotherTestClient.out(), testSyncMessage);
 
-        Socket client2 = new Socket(address, port);
-        client2.setSoTimeout(soTimeout);
-        PrintWriter out2 = new PrintWriter(new BufferedOutputStream(client2.getOutputStream()), true);
-        BufferedReader in2 = new BufferedReader(new InputStreamReader(client2.getInputStream()));
-        String username2 = "client2";
-        out2.println(username2);
+            String expectedSyncMessage = String.format(messageFormat, username2, testSyncMessage);
+            assertEquals(expectedSyncMessage, testClient.in().readMessage());
 
-        out2.println(testSyncMessage);
+            String message1 = "hello";
+            sendMessage(testClient.out(), message1);
+            assertEquals(String.format(messageFormat, username1, message1), anotherTestClient.in().readMessage());
 
-        String expectedSyncMessage = String.format("[%s]: %s", username2, testSyncMessage);
-        assertEquals(expectedSyncMessage, in1.readLine());
-
-        String message1 = "hello";
-        out1.println(message1);
-        assertEquals(String.format("[%s]: %s", username1, message1), in2.readLine());
-
-        String message2 = "hi";
-        out2.println(message2);
-        assertEquals(String.format("[%s]: %s", username2, message2), in1.readLine());
-
-        client1.close();
-        client2.close();
+            String message2 = "hi";
+            sendMessage(anotherTestClient.out(), message2);
+            assertEquals(String.format(messageFormat, username2, message2), testClient.in().readMessage());
+        }
     }
 
     @Test
     void shouldBroadcastMessageToOtherClients() throws IOException {
         int port = serverSocket.getLocalPort();
-        Socket client1 = new Socket(address, port);
-        PrintWriter out1 = new PrintWriter(new BufferedOutputStream(client1.getOutputStream()), true);
-        BufferedReader in1 = new BufferedReader(new InputStreamReader(client1.getInputStream()));
-        String username1 = "client1";
-        out1.println(username1);
+        String username1 = "testClient";
+        String username2 = "anotherTestClient";
 
-        Socket client2 = new Socket(address, port);
-        client2.setSoTimeout(soTimeout);
-        PrintWriter out2 = new PrintWriter(new BufferedOutputStream(client2.getOutputStream()), true);
-        BufferedReader in2 = new BufferedReader(new InputStreamReader(client2.getInputStream()));
-        out2.println("client2");
 
-        out2.println(testSyncMessage);
+        try (
+                ClientConnection testClient = connectAndLogin(username1, port);
+                ClientConnection anotherTestClient = connectAndLogin(username2, port)
+        ) {
 
-        String expectedSync = String.format("[%s]: %s", "client2", testSyncMessage);
-        assertEquals(expectedSync, in1.readLine());
+            sendMessage(anotherTestClient.out, testSyncMessage);
 
-        String messageToClient = "hello everyone!";
-        out1.println(messageToClient);
-        String expectedMessage = String.format("[%s]: %s", username1, messageToClient);
-        assertEquals(expectedMessage, in2.readLine());
+            String expectedSync = String.format(messageFormat, username2, testSyncMessage);
+            assertEquals(expectedSync, testClient.in().readMessage());
 
-        client1.close();
-        client2.close();
+            String messageToClient = "hello everyone!";
+            sendMessage(testClient.out(), messageToClient);
+            String expectedMessage = String.format(messageFormat, username1, messageToClient);
+            assertEquals(expectedMessage, anotherTestClient.in().readMessage());
+        }
+
     }
 
     @Test
     void shouldPrefixMessagesWithUsername() throws IOException {
         int port = serverSocket.getLocalPort();
-        Socket client1 = new Socket(address, port);
-        client1.setSoTimeout(soTimeout);
-        PrintWriter out1 = new PrintWriter(new BufferedOutputStream(client1.getOutputStream()), true);
-        BufferedReader in1 = new BufferedReader(new InputStreamReader(client1.getInputStream()));
-        out1.println("Carlos");
+        String username1 = "testUser";
+        String username2 = "anotherTestUser";
 
-        Socket client2 = new Socket(address, port);
-        client2.setSoTimeout(soTimeout);
-        PrintWriter out2 = new PrintWriter(new BufferedOutputStream(client2.getOutputStream()), true);
-        BufferedReader in2 = new BufferedReader(new InputStreamReader(client2.getInputStream()));
+        try (
+                ClientConnection testUser = connectAndLogin(username1, port);
+                ClientConnection anotherTestUser = connectAndLogin(username2, port)
+        ) {
+            sendMessage(anotherTestUser.out(), testSyncMessage);
 
-        out2.println("Ana");
+            String expectedSync = String.format(messageFormat, username2, testSyncMessage);
+            assertEquals(expectedSync, testUser.in().readMessage());
+
+            String messageSent = "Olá, Chatin";
+            sendMessage(testUser.out(), messageSent);
+
+            String expectedMessage = String.format(messageFormat, username1, messageSent);
+            assertEquals(expectedMessage, anotherTestUser.in().readMessage());
+        }
+
+    }
+
+    @Test
+    void shouldHandleMultilineMessages() throws IOException {
+        int port = serverSocket.getLocalPort();
+        String username1 = "testUser";
+        String username2 = "anotherTestUser";
+        try (
+                ClientConnection client1 = connectAndLogin(username1, port);
+                ClientConnection client2 = connectAndLogin(username2, port)
+        ) {
 
 
-        out2.println(testSyncMessage);
+            sendMessage(client2.out, testSyncMessage);
 
-        String expectedSync = String.format("[%s]: %s", "Ana", testSyncMessage);
-        assertEquals(expectedSync, in1.readLine());
+            String expectedSync = String.format(messageFormat, username2, testSyncMessage);
+            assertEquals(expectedSync, client1.in.readMessage());
 
-        String messageSent = "Olá, Ana";
-        out1.println(messageSent);
+            String multilineMessage = """
+                    This is a multiline
+                    Test message
+                    Hello""";
 
-        String expectedMessage = "[Carlos]: " + messageSent;
-        assertEquals(expectedMessage, in2.readLine());
+            sendMessage(client1.out(), multilineMessage);
 
-        client1.close();
-        client2.close();
+            String expectedMessage = String.format(messageFormat, username1, multilineMessage);
+
+            assertEquals(expectedMessage, client2.in.readMessage());
+
+        }
+    }
+
+    private ClientConnection connectAndLogin(String username, int port) throws IOException {
+        String address = "localhost";
+        int soTimeout = 6000;
+        Socket socket = new Socket(address, port);
+        socket.setSoTimeout(soTimeout);
+        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+        SocketMultiLineReader in = new SocketMultiLineReader(socket);
+        sendMessage(out, username);
+        return new ClientConnection(socket, out, in);
+    }
+
+    private void sendMessage(PrintWriter out, String message) {
+        out.println(message);
+        out.println("<<EOF>>");
+    }
+
+    private record ClientConnection(Socket socket, PrintWriter out, SocketMultiLineReader in) implements AutoCloseable {
+        @Override
+        public void close() throws IOException {
+            socket.close();
+        }
     }
 
     private static class LatchingBufferedReader extends BufferedReader {
