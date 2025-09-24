@@ -73,7 +73,27 @@ class ClientRegistryTest {
 
         verify(receiver1).sendMessage(expectedMessageFormat);
         verify(receiver2).sendMessage(expectedMessageFormat);
-        verify(sender, never()).sendMessage(anyString());
+        verify(sender, never()).sendMessage(expectedMessageFormat);
+    }
+
+    @Test
+    void shouldNotifyExistingClientsWhenAnotherClientJoins() {
+        ClientRegistry clientRegistry = new ClientRegistry();
+        String joiningClient = "joiningClient";
+        Client existingClient = mock(Client.class, "existingClient");
+        Client joining = mock(Client.class, joiningClient);
+
+        when(joining.getUsername()).thenReturn(joiningClient);
+
+        clientRegistry.add(existingClient);
+
+        clientRegistry.add(joining);
+
+        String expectedNotification = String.format("[SERVER]: %s entrou na sala", joining);
+
+        verify(existingClient).sendMessage(expectedNotification);
+
+        verify(joining, never()).sendMessage(anyString());
     }
 
 }
