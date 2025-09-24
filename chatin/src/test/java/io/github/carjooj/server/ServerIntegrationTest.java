@@ -3,6 +3,7 @@ package io.github.carjooj.server;
 import io.github.carjooj.client.clienthandler.factory.ChatClientHandlerFactory;
 import io.github.carjooj.client.clienthandler.factory.ClientHandlerFactory;
 import io.github.carjooj.client.clientregistry.ClientRegistry;
+import io.github.carjooj.client.protocol.ChatProtocol;
 import io.github.carjooj.client.reader.SocketMultiLineReader;
 import io.github.carjooj.logger.AppLogger;
 import io.github.carjooj.logger.Slf4jAppLogger;
@@ -28,8 +29,6 @@ class ServerIntegrationTest {
     private Server server;
     private ServerSocket serverSocket;
     private ExecutorService serverExecutor;
-    private final String testSyncMessage = "SYNC";
-    private final String messageFormat = "[%s]: %s";
 
 
     @BeforeEach
@@ -60,7 +59,7 @@ class ServerIntegrationTest {
         }
 
         if (serverExecutor != null) {
-            serverExecutor.awaitTermination(1, TimeUnit.SECONDS);
+            serverExecutor.awaitTermination(1500, TimeUnit.MILLISECONDS);
             serverExecutor.shutdownNow();
         }
     }
@@ -93,18 +92,20 @@ class ServerIntegrationTest {
                 ClientConnection testClient = connectAndLogin(username1, port);
                 ClientConnection anotherTestClient = connectAndLogin(username2, port)
         ) {
-            sendMessage(anotherTestClient.out(), testSyncMessage);
 
-            String expectedSyncMessage = String.format(messageFormat, username2, testSyncMessage);
-            assertEquals(expectedSyncMessage, testClient.in().readMessage());
+            String expectedNotification = String.format(ChatProtocol.SERVER_JOIN_NOTIFICATION_FORMAT, username2);
+            String notification = testClient.in().readMessage();
+            assertEquals(expectedNotification, notification);
 
             String message1 = "hello";
+            String testClientExpectedMessage = String.format(ChatProtocol.USER_MESSAGE_FORMAT, username1, message1);
             sendMessage(testClient.out(), message1);
-            assertEquals(String.format(messageFormat, username1, message1), anotherTestClient.in().readMessage());
+            assertEquals(testClientExpectedMessage, anotherTestClient.in().readMessage());
 
             String message2 = "hi";
+            String anotherTestClientExpectedMessage = String.format(ChatProtocol.USER_MESSAGE_FORMAT, username2, message2);
             sendMessage(anotherTestClient.out(), message2);
-            assertEquals(String.format(messageFormat, username2, message2), testClient.in().readMessage());
+            assertEquals(anotherTestClientExpectedMessage, testClient.in().readMessage());
         }
     }
 
@@ -113,22 +114,35 @@ class ServerIntegrationTest {
         int port = serverSocket.getLocalPort();
         String username1 = "testClient";
         String username2 = "anotherTestClient";
-
+        String probeUser = "probeClient";
 
         try (
-                ClientConnection testClient = connectAndLogin(username1, port);
-                ClientConnection anotherTestClient = connectAndLogin(username2, port)
+                ClientConnection testClient = connectAndLogin(username1, port)
+
         ) {
 
-            sendMessage(anotherTestClient.out, testSyncMessage);
+            try (
+                    ClientConnection probeClient = connectAndLogin(probeUser, port)
+            ) {
 
-            String expectedSync = String.format(messageFormat, username2, testSyncMessage);
-            assertEquals(expectedSync, testClient.in().readMessage());
+                String expectedProbeNotification = String.format(ChatProtocol.SERVER_JOIN_NOTIFICATION_FORMAT, probeUser);
+                assertEquals(expectedProbeNotification, testClient.in().readMessage());
+            }
 
-            String messageToClient = "hello everyone!";
-            sendMessage(testClient.out(), messageToClient);
-            String expectedMessage = String.format(messageFormat, username1, messageToClient);
-            assertEquals(expectedMessage, anotherTestClient.in().readMessage());
+            try (
+                    ClientConnection anotherTestClient = connectAndLogin(username2, port)
+            ) {
+
+                String expectedNotification = String.format(ChatProtocol.SERVER_JOIN_NOTIFICATION_FORMAT, username2);
+                String message = testClient.in().readMessage();
+                assertEquals(expectedNotification, message);
+
+                String messageToClient = "hello everyone!";
+                sendMessage(testClient.out(), messageToClient);
+                String expectedMessage = String.format(ChatProtocol.USER_MESSAGE_FORMAT, username1, messageToClient);
+                assertEquals(expectedMessage, anotherTestClient.in().readMessage());
+            }
+
         }
 
     }
@@ -143,15 +157,13 @@ class ServerIntegrationTest {
                 ClientConnection testUser = connectAndLogin(username1, port);
                 ClientConnection anotherTestUser = connectAndLogin(username2, port)
         ) {
-            sendMessage(anotherTestUser.out(), testSyncMessage);
 
-            String expectedSync = String.format(messageFormat, username2, testSyncMessage);
-            assertEquals(expectedSync, testUser.in().readMessage());
+            String expectedNotification = String.format(ChatProtocol.SERVER_JOIN_NOTIFICATION_FORMAT, username2);
+            assertEquals(expectedNotification, testUser.in().readMessage());
 
             String messageSent = "Olá, Chatin";
             sendMessage(testUser.out(), messageSent);
-
-            String expectedMessage = String.format(messageFormat, username1, messageSent);
+            String expectedMessage = String.format(ChatProtocol.USER_MESSAGE_FORMAT, username1, messageSent);
             assertEquals(expectedMessage, anotherTestUser.in().readMessage());
         }
 
@@ -162,28 +174,56 @@ class ServerIntegrationTest {
         int port = serverSocket.getLocalPort();
         String username1 = "testUser";
         String username2 = "anotherTestUser";
+        String probeUser = "probeClient";
         try (
-                ClientConnection client1 = connectAndLogin(username1, port);
-                ClientConnection client2 = connectAndLogin(username2, port)
+                ClientConnection testUser = connectAndLogin(username1, port)
+
         ) {
 
+            try (
+                    ClientConnection probeClient = connectAndLogin(probeUser, port)
+            ) {
+                String expectedProbeNotification = String.format(ChatProtocol.SERVER_JOIN_NOTIFICATION_FORMAT, probeUser);
+                assertEquals(expectedProbeNotification, testUser.in().readMessage());
+            }
 
-            sendMessage(client2.out, testSyncMessage);
+            try (
+                    ClientConnection anotherTestUser = connectAndLogin(username2, port)
+            ) {
+                String expectedNotification = String.format(ChatProtocol.SERVER_JOIN_NOTIFICATION_FORMAT, username2);
+                assertEquals(expectedNotification, testUser.in.readMessage());
 
-            String expectedSync = String.format(messageFormat, username2, testSyncMessage);
-            assertEquals(expectedSync, client1.in.readMessage());
+                String multilineMessage = """
+                        This is a multiline
+                        Test message
+                        Hello""";
 
-            String multilineMessage = """
-                    This is a multiline
-                    Test message
-                    Hello""";
+                sendMessage(testUser.out(), multilineMessage);
 
-            sendMessage(client1.out(), multilineMessage);
+                String expectedMessage = String.format(ChatProtocol.USER_MESSAGE_FORMAT, username1, multilineMessage);
 
-            String expectedMessage = String.format(messageFormat, username1, multilineMessage);
+                assertEquals(expectedMessage, anotherTestUser.in.readMessage());
+            }
 
-            assertEquals(expectedMessage, client2.in.readMessage());
 
+        }
+    }
+
+    @Test
+    void shouldNotifyOtherClientesWhenAnotherClientJoins() throws IOException {
+        int port = serverSocket.getLocalPort();
+        String username1 = "testUser";
+        String username2 = "anotherTestUser";
+        try (
+                ClientConnection client1 = connectAndLogin(username1, port)
+        ) {
+            try (
+                    ClientConnection client2 = connectAndLogin(username2, port)
+            ) {
+                String expectedNotification = String.format(ChatProtocol.SERVER_JOIN_NOTIFICATION_FORMAT, username2);
+                String notification = client1.in().readMessage();
+                assertEquals(expectedNotification, notification);
+            }
         }
     }
 

@@ -28,9 +28,8 @@ public class ClientHandler implements Runnable {
     }
 
     public void run() {
-        Socket clientSocket = this.socket;
         try (
-                clientSocket
+                this.socket
         ) {
 
             String username = messageReader.readMessage();
